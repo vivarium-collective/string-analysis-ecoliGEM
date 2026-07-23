@@ -1,8 +1,8 @@
 STRING ANALYSIS - E. COLI GEM PROJECT SUMMARY
 ==============================================
-Last updated: May 3, 2026
+Last updated: July 15, 2026
 Project: /string-analysis-ecoliGEM
-Main notebook: model_investigationMA.ipynb (37 cells)
+Main notebook: eps_analysis.ipynb (13 cells)
 Model: iML1515 (E. coli K-12, 1515 genes, ~2712 reactions)
 
 
@@ -10,8 +10,8 @@ WHAT WE ARE DOING
 -----------------
 This project uses genome-scale metabolic modeling (GEM) to build a simulated
 EPS-producing E. coli cell. The goal is to predict EPS production rates under
-different nutrient and regulatory conditions, giving quantitative estimates to
-guide lab experiments.
+different nutrient and regulatory conditions, giving quantitative estimates of
+EPS output as a purely computational (dry-lab) deliverable.
 
 A GEM model is a mathematical steady-state mass balance of all reactions in the
 cell. Flux Balance Analysis (FBA) finds the reaction rates (fluxes) that satisfy
@@ -225,7 +225,7 @@ would require arbitrary weighting.
 
 SIX CONDITIONS TESTED
 ----------------------
-All conditions use M9 minimal medium as the base. Values are upper bound
+Originally defined for M9 minimal medium as the base. Values are upper bound
 constraints on exchange reaction uptake rates (mmol/gDW/h):
 
   1. baseline:       standard M9, glucose 10 mM, unlimited O2/N/P/S
@@ -238,6 +238,16 @@ constraints on exchange reaction uptake rates (mmol/gDW/h):
 The "combined_EPS" condition mimics the natural biofilm trigger in E. coli:
 carbon excess (high glucose) + nitrogen stress (cannot use carbon for protein
 growth) + c-di-GMP switch on (biofilm mode activated).
+
+As of Phase 7, this same six-condition set was also re-run with LB as the base
+medium (the collaborator running these simulations works exclusively in LB).
+Two conditions needed LB-specific redefinitions rather than a direct port --
+see "PHASE 7" below and eps_media_comparison.ipynb for full rationale:
+  - high_glucose (LB):  LB + EX_glc__D_e = 20.0 (glucose-supplemented LB,
+    since LB has no baseline glucose to double)
+  - N_limited (LB):     all 20 amino-acid exchange bounds scaled to 20% of
+    their LB baseline value (since EX_nh4_e is not part of lb_medium -- LB's
+    real nitrogen source is the amino acids, not free ammonium)
 
 
 RESULTS SUMMARY (all three pathways, 90% growth constraint)
@@ -266,7 +276,7 @@ Conversion formula:
 KEY BIOLOGICAL INSIGHTS FROM THE MODEL
 ---------------------------------------
 1. Cellulose dominates: accounts for ~83% of total EPS in the combined_EPS
-   condition. This matches published biofilm matrix composition data.
+   condition.
 
 2. N-limitation is the strongest single driver: N_limited alone gives 8.79
    mmol/gDW/h total EPS vs 1.75 at baseline. When nitrogen is scarce, excess
@@ -288,6 +298,66 @@ KEY BIOLOGICAL INSIGHTS FROM THE MODEL
    UDP-GlcNAc for PNAG). The production envelope shows this clearly.
 
 
+M9 vs LB -- SIX-CONDITION COMPARISON (Phase 7)
+------------------------------------------------
+Full six-condition matrix (all three pathways, 90% growth constraint) re-run with
+LB as the base medium, for direct comparison to the M9 table above:
+
+  Condition        M9 growth  LB growth  M9 Total EPS  LB Total EPS  LB/M9 fold (EPS)
+  -------------    ---------  ---------  ------------  ------------  ----------------
+  baseline           0.877      1.953        1.746         4.974           2.85
+  high_glucose        1.780      3.065        3.543        10.646           3.00
+  low_oxygen          0.354      0.769        1.745         2.049           1.17
+  N_limited           0.185      1.299        8.794         2.617           0.30
+  EPS_phenotype       0.877      1.953        1.746         4.974           2.85
+  combined_EPS        0.185      2.160       19.696         8.851           0.45
+
+Key finding -- LB nitrogen-limitation is much weaker than M9 nitrogen-limitation:
+  M9 N_limited cuts growth 0.877 -> 0.185 h-1 (79% cut) because glucose (the sole
+  carbon source) stays unrestricted while NH4+ alone is cut -- creating a sharp
+  carbon-excess/nitrogen-scarce imbalance that forces carbon overflow into EPS.
+  LB N_limited only cuts growth 1.953 -> 1.299 h-1 (33% cut) because scaling all
+  20 amino acids down uniformly restricts carbon and nitrogen together (amino
+  acids are dual C+N sources) -- it never creates that same imbalance, so LB
+  Total EPS actually goes DOWN under this N-limited definition (4.97 -> 2.62),
+  not up. combined_EPS partially recovers this by adding a glucose supplement on
+  top of the scaled amino acids (LB Total EPS 8.85), but still falls well short
+  of the M9 combined_EPS number (19.70).
+
+Follow-up design question (not yet resolved): if LB is the fixed experimental
+medium going forward, a stronger EPS-inducing "N-limited" LB condition likely
+needs a different lever than uniform amino-acid scaling -- e.g. keeping glucose
+fixed and high while cutting only nitrogen-rich amino acids (Arg, Gln, Asn,
+Lys), rather than cutting all 20 uniformly.
+
+Other notes:
+  - RESOLVED (previously flagged as an inconsistency): eps_media_comparison.ipynb
+    used to define its own explicit m9_medium dict, manually capping O2/NH4/Pi/SO4
+    at 20/10/10/10 mmol/gDW/h -- values not tied to any cited source and stricter
+    than the standard GEM/iML1515 convention for "M9 minimal medium" (only the
+    carbon source uptake-limited; O2/N/P/S left unconstrained, since in a real M9
+    culture those salts are provided in molar excess and never actually become
+    growth-limiting). That standard convention is exactly what the model's own
+    default SBML exchange bounds represent, and is what eps_analysis.ipynb v3 and
+    the canonical table above already use (mu_max = 0.877 h-1). Decision: adopt
+    the SBML-default convention as the single M9 baseline everywhere. The old dict
+    is renamed m9_medium_restricted and kept only for reference; it is no longer
+    used as an M9 baseline anywhere in the project.
+  - Correction from this fix: the M9-vs-LB single-condition comparison (the
+    original section of eps_media_comparison.ipynb, before Phase 7) previously
+    reported colanic acid as ~1.8x higher in LB than M9 -- that number was based
+    on the retired m9_medium_restricted baseline. Rerun with the SBML-default M9
+    baseline, the correct fold-change is ~2.84x (M9: 0.168, LB: 0.476 mmol/gDW/h),
+    consistent with the ~2.85x Total-EPS fold-change for "baseline" in the Phase 7
+    table above. Any prior mention of "~1.8x more colanic acid" (including in
+    .claude/agents/eps-fba.md) is now stale and should be treated as superseded
+    by this ~2.84x figure.
+  - Also produced (single-condition, LB only, no six-condition matrix): each of
+    the three pathways individually pFBA-maximized under plain LB baseline --
+    Cellulose 2.184, Colanic acid 0.476, PNAG 2.314 mmol/gDW/h
+    (eps_lb_three_pathways.csv).
+
+
 WHAT HAS BEEN DONE (CHRONOLOGICAL)
 ------------------------------------
 Phase 1 -- Model selection (model_investigation.ipynb):
@@ -295,43 +365,52 @@ Phase 1 -- Model selection (model_investigation.ipynb):
   - iML1515 matched 11/20 STRING genes; next-best models matched only 4
   - Output: top5_ecoli_eps_models.csv, ecoli_eps_gene_summary.csv
 
-Phase 2 -- Gene mapping (model_investigationMA.ipynb, cells 2-6):
+Phase 2 -- Gene mapping (eps_analysis.ipynb, cell 3):
   - Built gene_map: maps all 20 STRING genes to their iML1515 reactions
   - Classified genes by role (biosynthetic enzyme, signaling, regulatory)
 
-Phase 3 -- Proxy analysis (model_investigationMA.ipynb, cells 7-23):
+Phase 3 -- Proxy analysis (superseded, removed from notebook):
   - Added sink on udcpgl_c (SK_udcpgl_c) as rough EPS proxy
   - Ran pFBA under 6 conditions tracking UDPGPT flux
   - Computed weighted "EPS score" heuristic
-  - Generated eps_score_with_sink.png
 
-Phase 4 -- First real EPS pathway: cellulose bcsA (cells 26-27):
-  - Student added CELSYNTH, CELLULOSEt, EX_cellulose_e
+Phase 4 -- First real EPS pathway: cellulose bcsA (superseded, removed):
+  - Added CELSYNTH, CELLULOSEt, EX_cellulose_e without c-di-GMP wiring
   - Ran production envelopes for all 6 conditions
-  - Generated eps_vs_biomass_tradeoff.png, eps_biomass_envelope_6conditions.png
-  - NOTE: this version did not include c-di-GMP wiring
 
-Phase 5 -- EPS Model v2: cellulose with c-di-GMP (cells 29-32):
+Phase 5 -- EPS Model v2: cellulose with c-di-GMP (eps_analysis.ipynb, cells 5-8):
   - Rebuilt cellulose pathway with c-di-GMP as required cofactor in CELSYNTH
   - Ran 6-condition analysis + per-cell conversion
-  - Generated eps_v2_condition_bars.png, eps_v2_production_envelope.png
-  - Output: eps_v2_condition_analysis.csv
+  - Generated eps_cellulose_condition_bars.png, eps_cellulose_production_envelope.png
+  - Output: eps_cellulose_condition_analysis.csv
 
-Phase 6 -- EPS Model v3: all three pathways (cells 33-37):
+Phase 6 -- EPS Model v3: all three pathways (eps_analysis.ipynb, cells 10-12):
   - Added COLASYNTH (colanic acid/Wca pathway)
   - Added PUACGAMex + EX_puacgam_e (PNAG, building on existing model reactions)
-  - Ran full comparison: no pathway vs each individual pathway vs all three
   - Generated eps_pathway_diagram.png, eps_pathway_comparison.png,
     eps_stacked_contributions.png
   - Output: eps_all_pathways_analysis.csv
 
+Phase 7 -- LB medium adoption + six-condition matrix in LB (eps_media_comparison.ipynb):
+  - Built M9 vs LB baseline comparison (single condition, colanic acid objective)
+  - Built LB-only per-pathway pFBA baseline (all 3 pathways individually maximized
+    under plain LB) -- output: eps_lb_three_pathways.csv
+  - Re-defined and ran the full six-condition matrix (all 3 pathways) with LB as
+    the base medium, redefining high_glucose and N_limited for LB's amino-acid-based
+    nutrient structure (see "M9 vs LB -- SIX-CONDITION COMPARISON" above)
+  - Output: eps_v4_m9_six_conditions.csv, eps_v4_lb_six_conditions.csv,
+    eps_m9_vs_lb_six_conditions_comparison.csv, eps_m9_vs_lb_six_conditions_bars.png
+  - Key finding: LB's amino-acid-scaling N_limited condition is much weaker than
+    M9's NH4-restriction N_limited condition -- flagged as an open design question
+
 
 NEXT STEPS
 ----------
-1. Experimental validation:
-   - Test combined_EPS media conditions in the lab: 20 mM glucose + 2 mM NH4+
-   - Measure EPS using Congo Red (cellulose), CPC assay (PNAG), or dry weight
-   - Compare measured values to model predictions (~1.3 ng EPS/cell/h upper bound)
+1. Design a stronger LB N-limitation condition:
+   - Uniform 20% amino-acid scaling (current Phase 7 approach) does not reproduce
+     the carbon-excess/nitrogen-scarce imbalance that drives EPS overflow in M9
+   - Try: keep glucose fixed/high while selectively cutting nitrogen-rich amino
+     acids (Arg, Gln, Asn, Lys) rather than scaling all 20 uniformly
 
 2. Gene knockout screen:
    - Systematically knock out each EPS-related gene (one at a time) and measure
@@ -356,43 +435,49 @@ NEXT STEPS
      feasible EPS fluxes at each growth rate
    - Tighter ranges = more reliable predictions
 
+7. Known open cleanup item: eps_analysis.ipynb's v2 cellulose section still writes
+   its CSV output as eps_v2_condition_analysis.csv, but that file was deleted and
+   this document had referred to it (pre-Phase-7) as eps_cellulose_condition_analysis.csv,
+   a name the code never actually wrote. Fix the filename in the notebook code (or
+   this doc) and rerun to regenerate a file that actually exists on disk.
+
 
 KEY FILES
 ---------
 Notebooks:
-  ecoliGEM.ipynb               initial model loading and exploration
   model_investigation.ipynb    BiGG model screening (58 models, 20 genes)
-  model_investigationMA.ipynb  full EPS analysis pipeline, 37 cells:
-                                 cells 0-23:  exploratory / proxy analysis
-                                 cells 24-27: cellulose bcsA pathway (v1/v2)
-                                 cells 28-32: cellulose + c-di-GMP (v2)
-                                 cells 33-37: all three pathways (v3)
+  eps_analysis.ipynb           full EPS analysis pipeline, 13 cells:
+                                 cell 3:    STRING gene map
+                                 cells 5-8: cellulose + c-di-GMP (v2)
+                                 cells 10-12: all three pathways (v3)
+  eps_media_comparison.ipynb   M9 vs LB medium comparison; LB-only per-pathway
+                                baseline; Phase 7 six-condition matrix in LB vs M9
 
 CSVs:
-  top5_ecoli_eps_models.csv            top 5 models by EPS gene count
-  ecoli_eps_gene_summary.csv           all 58 models ranked
-  eps_all_pathways_analysis.csv        MAIN RESULTS: all conditions x all pathways
-  eps_v2_condition_analysis.csv        cellulose-only results with per-cell estimates
-  eps_biomass_production_envelope.csv  flux envelope data (proxy analysis)
-  eps_biomass_envelope_all_conditions.csv  6-condition envelopes (v1 bcsA)
+  top5_ecoli_eps_models.csv              top 5 models by EPS gene count
+  ecoli_eps_gene_summary.csv             all 58 models ranked
+  eps_all_pathways_analysis.csv          MAIN RESULTS (M9): all conditions x all pathways
+  eps_lb_three_pathways.csv              LB baseline, each pathway individually maximized
+  eps_v4_m9_six_conditions.csv           Phase 7: M9 six-condition matrix (all 3 pathways)
+  eps_v4_lb_six_conditions.csv           Phase 7: LB six-condition matrix (all 3 pathways)
+  eps_m9_vs_lb_six_conditions_comparison.csv   Phase 7: M9 vs LB side-by-side + fold-changes
+  NOTE: eps_cellulose_condition_analysis.csv does NOT currently exist on disk --
+  see "Known open cleanup item" under NEXT STEPS.
 
 Figures:
-  eps_pathway_diagram.png              diagram of all 3 pathways added to iML1515
-  eps_pathway_comparison.png           before/after: no EPS -> each pathway -> all three
-  eps_stacked_contributions.png        stacked bars: pathway contributions per condition
-  eps_v2_condition_bars.png            cellulose condition bars (v2)
-  eps_v2_production_envelope.png       cellulose production envelope (v2)
-  eps_score_with_sink.png              proxy analysis EPS score (early work)
-  eps_biomass_envelope_6conditions.png 6-condition envelope from v1 bcsA
+  eps_pathway_diagram.png               diagram of all 3 pathways added to iML1515
+  eps_pathway_comparison.png            before/after: no EPS -> each pathway -> all three
+  eps_stacked_contributions.png         stacked bars: pathway contributions per condition
+  eps_cellulose_condition_bars.png      cellulose condition bars (v2)
+  eps_cellulose_production_envelope.png cellulose production envelope (v2)
+  eps_m9_vs_lb_six_conditions_bars.png  Phase 7: grouped bar chart, Total EPS M9 vs LB
 
 Reports (report/ folder):
   project_summary.txt          this file
-  eps_project_report.html      cellulose pathway detailed report
   eps_all_pathways_report.html MAIN REPORT: all three pathways, all figures
 
 Model source:
-  /Users/mayaabdalla/Downloads/iML1515.xml   iML1515 SBML file (not in repo)
-  bigg_models/                               local BiGG model cache
+  iML1515.xml   iML1515 SBML file (project root, not committed to git)
 
 
 MODELING NOTES AND CAVEATS
@@ -420,5 +505,5 @@ MODELING NOTES AND CAVEATS
   unrealistic high-flux solutions. It minimizes total flux while achieving the
   optimal objective value.
 
-- The iML1515 model file must be present at /Users/mayaabdalla/Downloads/iML1515.xml
-  to run any notebook cells. It is not stored in the repository.
+- The iML1515 model file must be present at iML1515.xml in the project root
+  to run any notebook cells. It is not committed to the repository (gitignored).
